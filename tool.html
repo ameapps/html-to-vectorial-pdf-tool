@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <title>HTML Converter</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 20px;
+      }
+      .buttons {
+        margin-top: 10px;
+      }
+      button {
+        margin-right: 10px;
+      }
+      .config {
+        margin-top: 15px;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Carica file HTML</h2>
+    <input type="file" id="fileInput" accept=".html,.htm" />
+
+    <div class="buttons">
+      <button id="toPNG">to PNG</button>
+      <button id="toPdfRaster">to PDF RASTER</button>
+      <button id="toPdfVectorial">to PDF VETTORIALE</button>
+      <button id="toWord">to Word</button>
+    </div>
+
+    <div id="pngConfig" class="config">
+      <label for="pngQuality">Qualità PNG: </label>
+      <select id="pngQuality">
+        <option value="1">Massima (senza sgranatura)</option>
+        <option value="0.8">Alta</option>
+        <option value="0.5">Media</option>
+        <option value="0.2">Bassa</option>
+      </select>
+      <button id="exportPNG">Esporta PNG</button>
+    </div>
+
+    <div id="preview"></div>
+
+    <!-- librerie di supporto -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.1.0/docx.min.js"></script>
+
+    <script>
+      const fileInput = document.getElementById("fileInput");
+      const preview = document.getElementById("preview");
+      let loadedHtml = "";
+
+      fileInput.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          loadedHtml = ev.target.result;
+          preview.innerHTML = loadedHtml;
+        };
+        reader.readAsText(file);
+      });
+
+      document.getElementById("toPNG").onclick = () => {
+        document.getElementById("pngConfig").style.display = "block";
+      };
+
+      document.getElementById("exportPNG").onclick = async () => {
+        const quality = parseFloat(document.getElementById("pngQuality").value);
+        const canvas = await html2canvas(preview);
+        const imgData = canvas.toDataURL("image/png", quality);
+        const link = document.createElement("a");
+        link.href = imgData;
+        link.download = "export.png";
+        link.click();
+      };
+
+      document.getElementById("toPdfRaster").onclick = async () => {
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF("p", "pt", "a4");
+        const canvas = await html2canvas(preview);
+        const imgData = canvas.toDataURL("image/png");
+        const imgProps = pdf.getImageProperties(imgData);
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+        pdf.save("export.pdf");
+      };
+
+      document.getElementById("toPdfVectorial").onclick = async () => {
+        // Prende il file selezionato
+        const file = fileInput.files[0];
+        if (!file) {
+          alert("Seleziona prima un file HTML.");
+          return;
+        }
+        // Costruisce il path assoluto (solo per demo locale, in produzione serve backend)
+        // Su browser non si può leggere il path completo per motivi di sicurezza,
+        // quindi qui si invia solo il nome file come esempio
+        // In un'app desktop o Electron si può inviare il path reale
+        const fakePath = file.name; // Sostituisci con il path reale se disponibile lato server
+
+        try {
+          const res = await fetch("http://localhost:3100/convert", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ htmlPath: fakePath })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert("PDF creato: " + data.output);
+            // Potresti anche scaricare il PDF qui se il server lo restituisce
+          } else {
+            alert("Errore: " + (data.error || "Impossibile convertire il file"));
+          }
+        } catch (err) {
+          alert("Errore di rete: " + err.message);
+        }
+      };
+
+      document.getElementById("toWord").onclick = async () => {
+        const doc = new window.docx.Document({
+          sections: [
+            {
+              properties: {},
+              children: [
+                new window.docx.Paragraph({
+                  children: [new window.docx.TextRun(preview.innerText)],
+                }),
+              ],
+            },
+          ],
+        });
+
+        const blob = await window.docx.Packer.toBlob(doc);
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "export.docx";
+        link.click();
+      };
+    </script>
+  </body>
+</html>
